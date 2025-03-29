@@ -14,31 +14,39 @@ function App() {
   const [resultados, setResultados] = useState([]);
   const [clubesDisponibles, setClubesDisponibles] = useState([]);
   const [modoOscuro, setModoOscuro] = useState(false);
+  const [loading, setLoading] = useState(false);
+
 
   const presupuestoTotal = presupuesto * personas;
 
   const buscar = async () => {
+    setLoading(true);
+
     const fechaFormateada = format(fecha, 'yyyy-MM-dd');
     const horaFormateada = format(horaMinima, 'HH:mm');
-
     const API_URL = import.meta.env.VITE_API_URL;
 
+    try {
+      const response = await fetch(`${API_URL}/buscar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fecha: fechaFormateada,
+          horaMinima: horaFormateada,
+          duracion: Number(duracion),
+          presupuesto: Number(presupuestoTotal),
+          personas: Number(personas)
+        })
+      });
 
-    const response = await fetch(`${API_URL}/buscar`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fecha: fechaFormateada,
-        horaMinima: horaFormateada,
-        duracion: Number(duracion),
-        presupuesto: Number(presupuestoTotal),
-        personas: Number(personas)
-      })
-    });
-
-    const data = await response.json();
-    let opciones = data.opciones || [];
-    setResultados(opciones);
+      const data = await response.json();
+      let opciones = data.opciones || [];
+      setResultados(opciones);
+    } catch (error) {
+      console.error('Error al buscar:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -141,9 +149,20 @@ function App() {
 
         <button
           onClick={buscar}
-          className="mt-8 w-full bg-blue-600 text-white font-semibold py-3 rounded-xl hover:bg-blue-700 transition"
+          disabled={loading}
+          className={`mt-8 w-full flex justify-center items-center gap-2 bg-blue-600 text-white font-semibold py-3 rounded-xl transition ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-blue-700'
+            }`}
         >
-          🔍 Buscar
+          {loading ? (
+            <>
+              <span className="animate-spin rounded-full h-5 w-5 border-t-2 border-white border-solid" />
+              Buscando...
+            </>
+          ) : (
+            <>
+              🔍 Buscar
+            </>
+          )}
         </button>
 
         <h2 className="mt-10 text-2xl font-bold text-black">Resultados:</h2>
