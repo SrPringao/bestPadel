@@ -69,9 +69,11 @@ app.post('/buscar', async (req, res) => {
                     const [h, m, s] = slot.start_time.split(":");
                     const localHour = (parseInt(h) - 6 + 24) % 24;
                     const horaLocal = `${localHour.toString().padStart(2, '0')}:${m}`;
+                    const clubInfo = clubs.find(c => c.name === club.name);
 
                     resultados.push({
                         club: club.name,
+                        link: clubInfo?.link || null,
                         cancha_id: cancha.resource_id,
                         start_time: horaLocal,
                         duration: slot.duration,
