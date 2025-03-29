@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import './index.css';
 import DatePicker from 'react-datepicker';
 import { format } from 'date-fns';
+const API_URL = import.meta.env.VITE_API_URL;
+
 
 function App() {
   const now = new Date();
@@ -24,7 +26,6 @@ function App() {
 
     const fechaFormateada = format(fecha, 'yyyy-MM-dd');
     const horaFormateada = format(horaMinima, 'HH:mm');
-    const API_URL = import.meta.env.VITE_API_URL;
 
     try {
       const response = await fetch(`${API_URL}/buscar`, {
@@ -146,6 +147,8 @@ function App() {
             </select>
           </div>
         </div>
+
+
 
         <button
           onClick={buscar}
