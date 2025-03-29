@@ -153,7 +153,12 @@ function App() {
           {resultadosFiltrados.map((r, idx) => (
             <li key={idx} className="bg-white text-black dark:bg-gray-700 border border-gray-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center">
               <div className="text-lg">
-                <a href={clubesDisponibles.find(c => c.name === r.club)?.link} target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-700 dark:text-blue-300 hover:underline">
+                <a
+                  href={r.link || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-blue-700 dark:text-blue-300 hover:underline"
+                >
                   {r.club}
                 </a> —  {r.start_time} ({r.duration} min)
               </div>
