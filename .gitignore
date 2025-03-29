@@ -1,0 +1,10 @@
+# Node
+node_modules/
+.env
+
+# Vite / React
+frontend/dist/
+
+# Logs
+npm-debug.log
+.DS_Store

@@ -21,7 +21,10 @@ function App() {
     const fechaFormateada = format(fecha, 'yyyy-MM-dd');
     const horaFormateada = format(horaMinima, 'HH:mm');
 
-    const response = await fetch('http://localhost:3001/buscar', {
+    const API_URL = import.meta.env.VITE_API_URL;
+
+
+    const response = await fetch(`${API_URL}/buscar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -40,7 +43,7 @@ function App() {
 
   useEffect(() => {
     const obtenerClubes = async () => {
-      const res = await fetch('http://localhost:3001/clubes');
+      const res = await fetch(`${API_URL}/clubes`);
       const data = await res.json();
       setClubesDisponibles(data);
     };
