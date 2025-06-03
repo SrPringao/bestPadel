@@ -40,8 +40,7 @@ function App() {
           horaMaxima: horaMaxFormateada,
           duracion: Number(duracion),
           presupuesto: Number(presupuestoTotal),
-          personas: Number(personas),
-          ordenarPor
+          personas: Number(personas)
         })
       });
 
@@ -64,9 +63,22 @@ function App() {
     obtenerClubes();
   }, []);
 
-  const resultadosFiltrados = club
-    ? resultados.filter(r => r.club === club)
-    : resultados;
+  const resultadosFiltrados = (() => {
+    const base = club ? resultados.filter(r => r.club === club) : [...resultados];
+    if (ordenarPor === 'hora') {
+      base.sort((a, b) => a.start_time.localeCompare(b.start_time));
+    } else {
+      base.sort((a, b) => {
+        const precioA = parseFloat(a.price.replace(' MXN', ''));
+        const precioB = parseFloat(b.price.replace(' MXN', ''));
+        if (precioA !== precioB) {
+          return precioA - precioB;
+        }
+        return a.start_time.localeCompare(b.start_time);
+      });
+    }
+    return base;
+  })();
 
   return (
     <div className={`min-h-screen p-4 transition-colors duration-300 ${modoOscuro ? 'bg-gray-900 text-white' : 'bg-gradient-to-br from-blue-50 to-gray-100 text-gray-900'}`}>
@@ -168,10 +180,26 @@ function App() {
 
           <div>
             <label className="block mb-1 text-style">🔽 Ordenar por:</label>
-            <select value={ordenarPor} onChange={e => setOrdenarPor(e.target.value)} className="w-full p-2 border rounded-lg input-style">
-              <option value="precio">Precio</option>
-              <option value="hora">Horario</option>
-            </select>
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={() => setOrdenarPor('precio')}
+                className={`px-4 py-2 rounded-full border transition-colors ${ordenarPor === 'precio'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-white border-gray-300'}`}
+              >
+                Precio
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrdenarPor('hora')}
+                className={`px-4 py-2 rounded-full border transition-colors ${ordenarPor === 'hora'
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-white border-gray-300'}`}
+              >
+                Horario
+              </button>
+            </div>
           </div>
         </div>
 
