@@ -10,7 +10,7 @@ app.use(express.json());
 const API_URL = "https://api.playtomic.io/v1/availability";
 
 app.post('/buscar', async (req, res) => {
-    const { fecha, horaMinima, duracion, presupuesto, personas } = req.body;
+    const { fecha, horaMinima, horaMaxima, duracion, presupuesto, personas, ordenarPor } = req.body;
     
     const start_min = `${fecha}T13:00:00`;
     //agregar 1 dia a start_max
@@ -57,12 +57,13 @@ app.post('/buscar', async (req, res) => {
                     const localHour = (parseInt(h) - 6 + 24) % 24;
                     const horaSlot = `${localHour.toString().padStart(2, '0')}:${m}`;
 
-                    const cumpleHora = horaSlot >= horaMinima;
+                    const cumpleHoraMin = horaMinima ? horaSlot >= horaMinima : true;
+                    const cumpleHoraMax = horaMaxima ? horaSlot <= horaMaxima : true;
                     const cumpleDuracion = slot.duration === duracion;
                     const precioNum = parseFloat(slot.price.replace(" MXN", ""));
                     const cumplePrecio = precioNum <= presupuesto;
 
-                    return cumpleHora && cumpleDuracion && cumplePrecio;
+                    return cumpleHoraMin && cumpleHoraMax && cumpleDuracion && cumplePrecio;
                 });
 
                 for (const slot of slotsFiltrados) {
@@ -88,17 +89,20 @@ app.post('/buscar', async (req, res) => {
         }
     }
 
-    // ordena por precio y luego por hora
-    resultados.sort((a, b) => {
-        const precioA = parseFloat(a.price.replace(" MXN", ""));
-        const precioB = parseFloat(b.price.replace(" MXN", ""));
+    if (ordenarPor === 'hora') {
+        resultados.sort((a, b) => a.start_time.localeCompare(b.start_time));
+    } else {
+        resultados.sort((a, b) => {
+            const precioA = parseFloat(a.price.replace(" MXN", ""));
+            const precioB = parseFloat(b.price.replace(" MXN", ""));
 
-        if (precioA !== precioB) {
-            return precioA - precioB;
-        }
+            if (precioA !== precioB) {
+                return precioA - precioB;
+            }
 
-        return a.start_time.localeCompare(b.start_time);
-    });
+            return a.start_time.localeCompare(b.start_time);
+        });
+    }
 
     res.json({ opciones: resultados });
 });

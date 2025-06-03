@@ -9,6 +9,7 @@ function App() {
   const now = new Date();
   const [fecha, setFecha] = useState(now);
   const [horaMinima, setHoraMinima] = useState(now);
+  const [horaMaxima, setHoraMaxima] = useState(now);
   const [duracion, setDuracion] = useState(60);
   const [presupuesto, setPresupuesto] = useState(100);
   const [personas, setPersonas] = useState(4);
@@ -17,6 +18,7 @@ function App() {
   const [clubesDisponibles, setClubesDisponibles] = useState([]);
   const [modoOscuro, setModoOscuro] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [ordenarPor, setOrdenarPor] = useState('precio');
 
 
   const presupuestoTotal = presupuesto * personas;
@@ -26,6 +28,7 @@ function App() {
 
     const fechaFormateada = format(fecha, 'yyyy-MM-dd');
     const horaFormateada = format(horaMinima, 'HH:mm');
+    const horaMaxFormateada = format(horaMaxima, 'HH:mm');
 
     try {
       const response = await fetch(`${API_URL}/buscar`, {
@@ -34,9 +37,11 @@ function App() {
         body: JSON.stringify({
           fecha: fechaFormateada,
           horaMinima: horaFormateada,
+          horaMaxima: horaMaxFormateada,
           duracion: Number(duracion),
           presupuesto: Number(presupuestoTotal),
-          personas: Number(personas)
+          personas: Number(personas),
+          ordenarPor
         })
       });
 
@@ -115,6 +120,20 @@ function App() {
             />
           </div>
 
+          <div>
+            <label className="block mb-1 text-style">🕒 Hora máxima:</label>
+            <DatePicker
+              selected={horaMaxima}
+              onChange={(time) => setHoraMaxima(time)}
+              showTimeSelect
+              showTimeSelectOnly
+              timeIntervals={15}
+              timeCaption="Hora"
+              dateFormat="hh:mm aa"
+              className="w-full p-2 border rounded-lg input-style"
+            />
+          </div>
+
 
           <div>
             <label className="block mb-1 text-style">📏 Duración:</label>
@@ -144,6 +163,14 @@ function App() {
               {clubesDisponibles.map((c, i) => (
                 <option key={i} value={c.name}>{c.name}</option>
               ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block mb-1 text-style">🔽 Ordenar por:</label>
+            <select value={ordenarPor} onChange={e => setOrdenarPor(e.target.value)} className="w-full p-2 border rounded-lg input-style">
+              <option value="precio">Precio</option>
+              <option value="hora">Horario</option>
             </select>
           </div>
         </div>
