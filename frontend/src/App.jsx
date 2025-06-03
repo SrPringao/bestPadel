@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import './index.css';
 import DatePicker from 'react-datepicker';
 import { format } from 'date-fns';
+import 'leaflet/dist/leaflet.css';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 const API_URL = import.meta.env.VITE_API_URL;
 
 
@@ -19,9 +21,29 @@ function App() {
   const [modoOscuro, setModoOscuro] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ordenarPor, setOrdenarPor] = useState('precio');
+  const [zona, setZona] = useState('');
+  const [distancia, setDistancia] = useState('');
+  const [userCoords, setUserCoords] = useState(null);
+  const [favoritos, setFavoritos] = useState([]);
 
 
   const presupuestoTotal = presupuesto * personas;
+
+  const toggleFavorito = (item) => {
+    const existe = favoritos.some(
+      f => f.club === item.club && f.start_time === item.start_time && f.price === item.price
+    );
+    let nuevos;
+    if (existe) {
+      nuevos = favoritos.filter(
+        f => !(f.club === item.club && f.start_time === item.start_time && f.price === item.price)
+      );
+    } else {
+      nuevos = [...favoritos, item];
+    }
+    setFavoritos(nuevos);
+    localStorage.setItem('favoritos', JSON.stringify(nuevos));
+  };
 
   const buscar = async () => {
     setLoading(true);
@@ -47,6 +69,15 @@ function App() {
       const data = await response.json();
       let opciones = data.opciones || [];
       setResultados(opciones);
+      if (Notification.permission === 'granted') {
+        new Notification(`Se encontraron ${opciones.length} opciones`);
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(p => {
+          if (p === 'granted') {
+            new Notification(`Se encontraron ${opciones.length} opciones`);
+          }
+        });
+      }
     } catch (error) {
       console.error('Error al buscar:', error);
     } finally {
@@ -61,10 +92,48 @@ function App() {
       setClubesDisponibles(data);
     };
     obtenerClubes();
+
+    const favs = localStorage.getItem('favoritos');
+    if (favs) {
+      setFavoritos(JSON.parse(favs));
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setUserCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      },
+      () => {}
+    );
   }, []);
 
+  const distanciaEntre = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
   const resultadosFiltrados = (() => {
-    const base = club ? resultados.filter(r => r.club === club) : [...resultados];
+    let base = club ? resultados.filter(r => r.club === club) : [...resultados];
+    if (zona) {
+      base = base.filter(r => {
+        const info = clubesDisponibles.find(c => c.name === r.club);
+        return info && info.zone === zona;
+      });
+    }
+    if (distancia && userCoords) {
+      base = base.filter(r => {
+        const info = clubesDisponibles.find(c => c.name === r.club);
+        if (!info) return false;
+        const d = distanciaEntre(userCoords.lat, userCoords.lon, info.lat, info.lon);
+        return d <= Number(distancia);
+      });
+    }
+
     if (ordenarPor === 'hora') {
       base.sort((a, b) => a.start_time.localeCompare(b.start_time));
     } else {
@@ -179,8 +248,23 @@ function App() {
           </div>
 
           <div>
-            <label className="block mb-1 text-style">🔽 Ordenar por:</label>
-            <div className="flex space-x-2">
+            <label className="block mb-1 text-style">Zona:</label>
+            <select value={zona} onChange={e => setZona(e.target.value)} className="w-full p-2 border rounded-lg input-style">
+              <option value="">Todas</option>
+              {[...new Set(clubesDisponibles.map(c => c.zone))].map((z, i) => (
+                <option key={i} value={z}>{z}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block mb-1 text-style">Distancia máxima (km):</label>
+            <input type="number" value={distancia} onChange={e => setDistancia(e.target.value)} className="w-full p-2 border rounded-lg input-style" />
+          </div>
+
+          <div>
+            <label className="block mb-1 text-style text-center">Ordenar por:</label>
+            <div className="flex justify-center space-x-2">
               <button
                 type="button"
                 onClick={() => setOrdenarPor('precio')}
@@ -227,25 +311,57 @@ function App() {
         {resultadosFiltrados.length === 0 && <p className="text-gray-500 mt-2">No se encontraron resultados.</p>}
 
         <ul className="mt-4 space-y-3">
-          {resultadosFiltrados.map((r, idx) => (
-            <li key={idx} className="bg-white text-black dark:bg-gray-700 border border-gray-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center">
-              <div className="text-lg">
-                <a
-                  href={r.link || '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-semibold text-blue-700 dark:text-blue-300 hover:underline"
-                >
-                  {r.club}
-                </a> —  {r.start_time} ({r.duration} min)
-              </div>
-              <div className="text-right mt-2 sm:mt-0">
-                <p className="font-medium text-green-600">{r.price}</p>
-                <p className="text-sm text-gray-600">({r.pricePerPerson} por persona)</p>
-              </div>
-            </li>
-          ))}
+          {resultadosFiltrados.map((r, idx) => {
+            const esFav = favoritos.some(f => f.club === r.club && f.start_time === r.start_time && f.price === r.price);
+            return (
+              <li key={idx} className="bg-white text-black dark:bg-gray-700 border border-gray-200 rounded-xl p-4 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                <div className="text-lg flex-1">
+                  <a
+                    href={r.link || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-blue-700 dark:text-blue-300 hover:underline"
+                  >
+                    {r.club}
+                  </a> —  {r.start_time} ({r.duration} min)
+                </div>
+                <button onClick={() => toggleFavorito(r)} className="mr-4 text-xl">
+                  {esFav ? '★' : '☆'}
+                </button>
+                <div className="text-right mt-2 sm:mt-0">
+                  <p className="font-medium text-green-600">{r.price}</p>
+                  <p className="text-sm text-gray-600">({r.pricePerPerson} por persona)</p>
+                </div>
+              </li>
+            );
+          })}
         </ul>
+
+        {favoritos.length > 0 && (
+          <div className="mt-8">
+            <h3 className="text-xl font-bold">Favoritos</h3>
+            <ul className="mt-2 space-y-2">
+              {favoritos.map((f, i) => (
+                <li key={i} className="flex justify-between bg-white dark:bg-gray-700 p-2 rounded">
+                  <span>{f.club} {f.start_time}</span>
+                  <span>{f.price}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <MapContainer center={[20.67, -103.38]} zoom={11} className="h-96 mt-8">
+          <TileLayer
+            attribution='&copy; OpenStreetMap contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          {clubesDisponibles.map((c, i) => (
+            <Marker key={i} position={[c.lat, c.lon]}>
+              <Popup>{c.name}</Popup>
+            </Marker>
+          ))}
+        </MapContainer>
       </div>
     </div>
   );
