@@ -13,6 +13,9 @@ const GDL_BOUNDS = [
   [20.80, -103.20]  // Esquina noreste
 ];
 
+// Centro por defecto de Guadalajara
+const GDL_CENTER = [20.67, -103.38];
+
 function App() {
   const now = new Date();
   const [fecha, setFecha] = useState(now);
@@ -45,6 +48,7 @@ function App() {
   const [mostrarMenu, setMostrarMenu] = useState(false);
   const [disponibilidadFavoritos, setDisponibilidadFavoritos] = useState({});
   const [loadingFavoritos, setLoadingFavoritos] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
 
   const presupuestoTotal = presupuesto * personas;
 
@@ -163,12 +167,22 @@ function App() {
       setFavoritos(JSON.parse(favs));
     }
 
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setUserCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-      },
-      () => {}
-    );
+    // Obtener ubicación del usuario
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          setUserCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+          setMapReady(true);
+        },
+        () => {
+          // Si hay error o el usuario rechaza, usar centro por defecto
+          setMapReady(true);
+        }
+      );
+    } else {
+      // Si no hay geolocalización disponible, usar centro por defecto
+      setMapReady(true);
+    }
 
     // Verificar disponibilidad al cargar
     verificarDisponibilidadFavoritos();
@@ -690,43 +704,45 @@ function App() {
 
           {/* Contenedor del contenido del panel */}
           <div className="h-[calc(100%-56px)] lg:h-full flex flex-col">
-            {/* Mapa (1/3 del alto) */}
+            {/* Mapa */}
             <div className="h-[300px] lg:h-[350px] rounded-xl overflow-hidden shadow-xl mx-4 mt-4">
-              <MapContainer 
-                center={userCoords ? [userCoords.lat, userCoords.lon] : [20.67, -103.38]} 
-                zoom={12} 
-                className="h-full w-full"
-                maxBounds={GDL_BOUNDS}
-                minZoom={11}
-                maxZoom={18}
-                boundsOptions={{ padding: [0, 0] }}
-                style={{ background: '#fff' }}
-              >
-                <TileLayer
-                  attribution='&copy; OpenStreetMap contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  bounds={GDL_BOUNDS}
-                  noWrap={true}
-                />
-                {userCoords && (
-                  <Marker 
-                    position={[userCoords.lat, userCoords.lon]}
-                    icon={new L.DivIcon({
-                      className: 'custom-div-icon',
-                      html: '<div style="background-color: #4299e1; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>',
-                      iconSize: [15, 15],
-                      iconAnchor: [7, 7]
-                    })}
-                  >
-                    <Popup>Tu ubicación actual</Popup>
-                  </Marker>
-                )}
-                {clubesDisponibles.map((c, i) => (
-                  <Marker key={i} position={[c.lat, c.lon]}>
-                    <Popup>{c.name}</Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
+              {mapReady && (
+                <MapContainer 
+                  center={userCoords ? [userCoords.lat, userCoords.lon] : GDL_CENTER}
+                  zoom={12} 
+                  className="h-full w-full"
+                  maxBounds={GDL_BOUNDS}
+                  minZoom={11}
+                  maxZoom={18}
+                  boundsOptions={{ padding: [0, 0] }}
+                  style={{ background: '#fff' }}
+                >
+                  <TileLayer
+                    attribution='&copy; OpenStreetMap contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    bounds={GDL_BOUNDS}
+                    noWrap={true}
+                  />
+                  {userCoords && (
+                    <Marker 
+                      position={[userCoords.lat, userCoords.lon]}
+                      icon={new L.DivIcon({
+                        className: 'custom-div-icon',
+                        html: '<div style="background-color: #4299e1; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>',
+                        iconSize: [15, 15],
+                        iconAnchor: [7, 7]
+                      })}
+                    >
+                      <Popup>Tu ubicación actual</Popup>
+                    </Marker>
+                  )}
+                  {clubesDisponibles.map((c, i) => (
+                    <Marker key={i} position={[c.lat, c.lon]}>
+                      <Popup>{c.name}</Popup>
+                    </Marker>
+                  ))}
+                </MapContainer>
+              )}
             </div>
 
             {/* Lista de favoritos */}
