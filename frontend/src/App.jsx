@@ -48,7 +48,9 @@ function App() {
   const [mostrarMenu, setMostrarMenu] = useState(false);
   const [disponibilidadFavoritos, setDisponibilidadFavoritos] = useState({});
   const [loadingFavoritos, setLoadingFavoritos] = useState(true);
+  const [mapCenter, setMapCenter] = useState(GDL_CENTER);
   const [mapReady, setMapReady] = useState(false);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
 
   const presupuestoTotal = presupuesto * personas;
 
@@ -154,38 +156,61 @@ function App() {
     }
   };
 
+  // Efecto para cargar datos iniciales
   useEffect(() => {
     const obtenerClubes = async () => {
-      const res = await fetch(`${API_URL}/clubes`);
-      const data = await res.json();
-      setClubesDisponibles(data);
+      try {
+        const res = await fetch(`${API_URL}/clubes`);
+        const data = await res.json();
+        setClubesDisponibles(data);
+      } catch (error) {
+        console.error("Error fetching clubs:", error);
+      }
     };
-    obtenerClubes();
 
-    const favs = localStorage.getItem('favoritos');
-    if (favs) {
-      setFavoritos(JSON.parse(favs));
-    }
+    const cargarFavoritos = () => {
+      const favs = localStorage.getItem('favoritos');
+      if (favs) {
+        try {
+          setFavoritos(JSON.parse(favs));
+        } catch (error) {
+          console.error("Error parsing favorites:", error);
+        }
+      }
+    };
 
-    // Obtener ubicación del usuario
+    // Intentar obtener la ubicación del usuario, pero no esperar por ella
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        pos => {
-          setUserCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-          setMapReady(true);
+        (pos) => {
+          setUserCoords({
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude
+          });
         },
         () => {
-          // Si hay error o el usuario rechaza, usar centro por defecto
-          setMapReady(true);
+          console.log("No se pudo obtener la ubicación");
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
         }
       );
-    } else {
-      // Si no hay geolocalización disponible, usar centro por defecto
-      setMapReady(true);
     }
 
-    // Verificar disponibilidad al cargar
+    // Cargar datos independientemente de la ubicación
+    obtenerClubes();
+    cargarFavoritos();
     verificarDisponibilidadFavoritos();
+    
+    // Después de un breve momento, marcar la ubicación como no cargando
+    // esto evita el parpadeo si la ubicación se obtiene rápidamente
+    const timer = setTimeout(() => {
+      setIsLoadingLocation(false);
+    }, 1000);
+
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -706,42 +731,57 @@ function App() {
           <div className="h-[calc(100%-56px)] lg:h-full flex flex-col">
             {/* Mapa */}
             <div className="h-[300px] lg:h-[350px] rounded-xl overflow-hidden shadow-xl mx-4 mt-4">
-              {mapReady && (
-                <MapContainer 
-                  center={userCoords ? [userCoords.lat, userCoords.lon] : GDL_CENTER}
-                  zoom={12} 
-                  className="h-full w-full"
-                  maxBounds={GDL_BOUNDS}
-                  minZoom={11}
-                  maxZoom={18}
-                  boundsOptions={{ padding: [0, 0] }}
-                  style={{ background: '#fff' }}
-                >
-                  <TileLayer
-                    attribution='&copy; OpenStreetMap contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    bounds={GDL_BOUNDS}
-                    noWrap={true}
-                  />
-                  {userCoords && (
-                    <Marker 
-                      position={[userCoords.lat, userCoords.lon]}
-                      icon={new L.DivIcon({
-                        className: 'custom-div-icon',
-                        html: '<div style="background-color: #4299e1; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>',
-                        iconSize: [15, 15],
-                        iconAnchor: [7, 7]
-                      })}
-                    >
-                      <Popup>Tu ubicación actual</Popup>
-                    </Marker>
-                  )}
-                  {clubesDisponibles.map((c, i) => (
-                    <Marker key={i} position={[c.lat, c.lon]}>
-                      <Popup>{c.name}</Popup>
-                    </Marker>
-                  ))}
-                </MapContainer>
+              <MapContainer 
+                center={GDL_CENTER}
+                zoom={12} 
+                className="h-full w-full"
+                maxBounds={GDL_BOUNDS}
+                minZoom={11}
+                maxZoom={18}
+                boundsOptions={{ padding: [0, 0] }}
+                style={{ background: '#fff' }}
+              >
+                <TileLayer
+                  attribution='&copy; OpenStreetMap contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  bounds={GDL_BOUNDS}
+                  noWrap={true}
+                />
+                {userCoords && (
+                  <Marker 
+                    position={[userCoords.lat, userCoords.lon]}
+                    icon={new L.DivIcon({
+                      className: 'custom-div-icon',
+                      html: '<div style="background-color: #4299e1; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>',
+                      iconSize: [15, 15],
+                      iconAnchor: [7, 7]
+                    })}
+                  >
+                    <Popup>Tu ubicación actual</Popup>
+                  </Marker>
+                )}
+                {clubesDisponibles.map((c, i) => (
+                  <Marker key={i} position={[c.lat, c.lon]}>
+                    <Popup>{c.name}</Popup>
+                  </Marker>
+                ))}
+              </MapContainer>
+              {isLoadingLocation && (
+                <div className={`
+                  absolute top-6 left-1/2 transform -translate-x-1/2
+                  px-4 py-2 rounded-full text-sm
+                  ${modoOscuro
+                    ? 'bg-gray-800 text-gray-200'
+                    : 'bg-white text-gray-600'
+                  }
+                  shadow-lg border
+                  ${modoOscuro ? 'border-gray-700' : 'border-gray-200'}
+                `}>
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin h-4 w-4 border-2 border-blue-500 rounded-full border-t-transparent"></div>
+                    <span>Obteniendo ubicación...</span>
+                  </div>
+                </div>
               )}
             </div>
 
