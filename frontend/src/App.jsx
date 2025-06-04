@@ -16,6 +16,25 @@ const GDL_BOUNDS = [
 // Centro por defecto de Guadalajara
 const GDL_CENTER = [20.67, -103.38];
 
+// Definir los iconos personalizados
+const userIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const clubIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
 function App() {
   const now = new Date();
   const [fecha, setFecha] = useState(now);
@@ -246,8 +265,15 @@ function App() {
       });
     }
 
-    if (ordenarPor === 'hora') {
-      base.sort((a, b) => a.start_time.localeCompare(b.start_time));
+    if (ordenarPor === 'horario') {
+      base.sort((a, b) => {
+        // Convertir las horas a objetos Date para comparación correcta
+        const [horaA, minutosA] = a.start_time.split(':').map(Number);
+        const [horaB, minutosB] = b.start_time.split(':').map(Number);
+        const dateA = new Date(2000, 0, 1, horaA, minutosA);
+        const dateB = new Date(2000, 0, 1, horaB, minutosB);
+        return dateA - dateB;
+      });
     } else if (ordenarPor === 'distancia' && userCoords) {
       base.sort((a, b) => {
         const infoA = clubesDisponibles.find(c => c.name === a.club);
@@ -750,19 +776,21 @@ function App() {
                 {userCoords && (
                   <Marker 
                     position={[userCoords.lat, userCoords.lon]}
-                    icon={new L.DivIcon({
-                      className: 'custom-div-icon',
-                      html: '<div style="background-color: #4299e1; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white;"></div>',
-                      iconSize: [15, 15],
-                      iconAnchor: [7, 7]
-                    })}
+                    icon={userIcon}
                   >
                     <Popup>Tu ubicación actual</Popup>
                   </Marker>
                 )}
                 {clubesDisponibles.map((c, i) => (
-                  <Marker key={i} position={[c.lat, c.lon]}>
-                    <Popup>{c.name}</Popup>
+                  <Marker 
+                    key={i} 
+                    position={[c.lat, c.lon]}
+                    icon={clubIcon}
+                  >
+                    <Popup>
+                      <div className="font-semibold">{c.name}</div>
+                      <div className="text-sm">{c.zone}</div>
+                    </Popup>
                   </Marker>
                 ))}
               </MapContainer>
