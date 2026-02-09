@@ -2,38 +2,12 @@ import { useState, useEffect } from 'react';
 import './index.css';
 import DatePicker from 'react-datepicker';
 import { format } from 'date-fns';
-import 'leaflet/dist/leaflet.css';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
+import Sidebar from './components/Sidebar';
+import MapCard from './components/MapCard';
+import FavoritesList from './components/FavoritesList';
+
 const API_URL = import.meta.env.VITE_API_URL;
-
-// Definir los límites de Guadalajara (aproximados)
-const GDL_BOUNDS = [
-  [20.53, -103.50], // Esquina suroeste
-  [20.80, -103.20]  // Esquina noreste
-];
-
-// Centro por defecto de Guadalajara
-const GDL_CENTER = [20.67, -103.38];
-
-// Definir los iconos personalizados
-const userIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
-const clubIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
+const RESULTADOS_POR_PAGINA = 12;
 
 function App() {
   const now = new Date();
@@ -52,9 +26,7 @@ function App() {
   const [clubesDisponibles, setClubesDisponibles] = useState([]);
   const [modoOscuro, setModoOscuro] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-      return savedTheme === 'dark';
-    }
+    if (savedTheme) return savedTheme === 'dark';
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
   const [loading, setLoading] = useState(false);
@@ -63,39 +35,32 @@ function App() {
   const [distancia, setDistancia] = useState('');
   const [userCoords, setUserCoords] = useState(null);
   const [favoritos, setFavoritos] = useState([]);
-  const [mostrarFavoritos, setMostrarFavoritos] = useState(false);
   const [mostrarMenu, setMostrarMenu] = useState(false);
   const [disponibilidadFavoritos, setDisponibilidadFavoritos] = useState({});
   const [loadingFavoritos, setLoadingFavoritos] = useState(true);
-  const [mapCenter, setMapCenter] = useState(GDL_CENTER);
-  const [mapReady, setMapReady] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [mostrarFiltrosAvanzados, setMostrarFiltrosAvanzados] = useState(false);
 
   const presupuestoTotal = presupuesto * personas;
+  const filtrosAvanzadosActivos = !!(club || zona || distancia);
 
   const toggleFavorito = (item) => {
     const existe = favoritos.some(
       f => f.club === item.club && f.start_time === item.start_time && f.price === item.price
     );
-    let nuevos;
-    if (existe) {
-      nuevos = favoritos.filter(
-        f => !(f.club === item.club && f.start_time === item.start_time && f.price === item.price)
-      );
-    } else {
-      nuevos = [...favoritos, item];
-    }
+    const nuevos = existe
+      ? favoritos.filter(f => !(f.club === item.club && f.start_time === item.start_time && f.price === item.price))
+      : [...favoritos, item];
     setFavoritos(nuevos);
     localStorage.setItem('favoritos', JSON.stringify(nuevos));
   };
 
   const buscar = async () => {
     setLoading(true);
-
     const fechaFormateada = format(fecha, 'yyyy-MM-dd');
     const horaFormateada = format(horaMinima, 'HH:mm');
     const horaMaxFormateada = format(horaMaxima, 'HH:mm');
-
     try {
       const response = await fetch(`${API_URL}/buscar`, {
         method: 'POST',
@@ -109,17 +74,14 @@ function App() {
           personas: Number(personas)
         })
       });
-
       const data = await response.json();
-      let opciones = data.opciones || [];
-      setResultados(opciones);
+      setResultados(data.opciones || []);
+      setPaginaActual(1);
       if (Notification.permission === 'granted') {
-        new Notification(`Se encontraron ${opciones.length} opciones`);
+        new Notification(`Se encontraron ${(data.opciones || []).length} opciones`);
       } else if (Notification.permission !== 'denied') {
         Notification.requestPermission().then(p => {
-          if (p === 'granted') {
-            new Notification(`Se encontraron ${opciones.length} opciones`);
-          }
+          if (p === 'granted') new Notification(`Se encontraron ${(data.opciones || []).length} opciones`);
         });
       }
     } catch (error) {
@@ -129,14 +91,12 @@ function App() {
     }
   };
 
-  // Función para verificar disponibilidad de favoritos
   const verificarDisponibilidadFavoritos = async () => {
     setLoadingFavoritos(true);
     const favsFromStorage = localStorage.getItem('favoritos');
     if (favsFromStorage) {
       const favs = JSON.parse(favsFromStorage);
       const fechaHoy = format(new Date(), 'yyyy-MM-dd');
-      
       try {
         const response = await fetch(`${API_URL}/buscar`, {
           method: 'POST',
@@ -150,20 +110,14 @@ function App() {
             personas: 4
           })
         });
-
         const data = await response.json();
         const opcionesDisponibles = data.opciones || [];
-        
         const disponibilidad = {};
         favs.forEach(fav => {
-          disponibilidad[`${fav.club}-${fav.start_time}-${fav.price}`] = 
-            opcionesDisponibles.some(
-              opt => opt.club === fav.club && 
-                    opt.start_time === fav.start_time && 
-                    opt.price === fav.price
-            );
+          disponibilidad[`${fav.club}-${fav.start_time}-${fav.price}`] = opcionesDisponibles.some(
+            opt => opt.club === fav.club && opt.start_time === fav.start_time && opt.price === fav.price
+          );
         });
-        
         setDisponibilidadFavoritos(disponibilidad);
       } catch (error) {
         console.error('Error al verificar disponibilidad:', error);
@@ -175,7 +129,6 @@ function App() {
     }
   };
 
-  // Efecto para cargar datos iniciales
   useEffect(() => {
     const obtenerClubes = async () => {
       try {
@@ -183,52 +136,30 @@ function App() {
         const data = await res.json();
         setClubesDisponibles(data);
       } catch (error) {
-        console.error("Error fetching clubs:", error);
+        console.error('Error fetching clubs:', error);
       }
     };
-
     const cargarFavoritos = () => {
       const favs = localStorage.getItem('favoritos');
       if (favs) {
         try {
           setFavoritos(JSON.parse(favs));
         } catch (error) {
-          console.error("Error parsing favorites:", error);
+          console.error('Error parsing favorites:', error);
         }
       }
     };
-
-    // Intentar obtener la ubicación del usuario, pero no esperar por ella
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserCoords({
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude
-          });
-        },
-        () => {
-          console.log("No se pudo obtener la ubicación");
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 5000,
-          maximumAge: 0
-        }
+        (pos) => setUserCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        () => console.log('No se pudo obtener la ubicacion'),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
       );
     }
-
-    // Cargar datos independientemente de la ubicación
     obtenerClubes();
     cargarFavoritos();
     verificarDisponibilidadFavoritos();
-    
-    // Después de un breve momento, marcar la ubicación como no cargando
-    // esto evita el parpadeo si la ubicación se obtiene rápidamente
-    const timer = setTimeout(() => {
-      setIsLoadingLocation(false);
-    }, 1000);
-
+    const timer = setTimeout(() => setIsLoadingLocation(false), 1000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -242,8 +173,7 @@ function App() {
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat / 2) ** 2 +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) ** 2;
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
@@ -260,679 +190,419 @@ function App() {
       base = base.filter(r => {
         const info = clubesDisponibles.find(c => c.name === r.club);
         if (!info) return false;
-        const d = distanciaEntre(userCoords.lat, userCoords.lon, info.lat, info.lon);
-        return d <= Number(distancia);
+        return distanciaEntre(userCoords.lat, userCoords.lon, info.lat, info.lon) <= Number(distancia);
       });
     }
+    const parsePrecio = (p) => {
+      if (p == null) return 0;
+      if (typeof p === 'number') return p;
+      const str = String(p).replace(/ MXN/gi, '');
+      return parseFloat(str) || 0;
+    };
+    const parseHora = (t) => {
+      if (!t || typeof t !== 'string') return 0;
+      const parts = t.split(':').map(Number);
+      const [h = 0, m = 0] = parts;
+      return h * 60 + m;
+    };
 
     if (ordenarPor === 'horario') {
-      base.sort((a, b) => {
-        // Convertir las horas a objetos Date para comparación correcta
-        const [horaA, minutosA] = a.start_time.split(':').map(Number);
-        const [horaB, minutosB] = b.start_time.split(':').map(Number);
-        const dateA = new Date(2000, 0, 1, horaA, minutosA);
-        const dateB = new Date(2000, 0, 1, horaB, minutosB);
-        return dateA - dateB;
-      });
+      base.sort((a, b) => parseHora(a.start_time) - parseHora(b.start_time));
     } else if (ordenarPor === 'distancia' && userCoords) {
       base.sort((a, b) => {
         const infoA = clubesDisponibles.find(c => c.name === a.club);
         const infoB = clubesDisponibles.find(c => c.name === b.club);
         if (!infoA || !infoB) return 0;
-        const distA = distanciaEntre(userCoords.lat, userCoords.lon, infoA.lat, infoA.lon);
-        const distB = distanciaEntre(userCoords.lat, userCoords.lon, infoB.lat, infoB.lon);
-        return distA - distB;
+        return distanciaEntre(userCoords.lat, userCoords.lon, infoA.lat, infoA.lon) -
+          distanciaEntre(userCoords.lat, userCoords.lon, infoB.lat, infoB.lon);
       });
     } else {
       base.sort((a, b) => {
-        const precioA = parseFloat(a.price.replace(' MXN', ''));
-        const precioB = parseFloat(b.price.replace(' MXN', ''));
-        if (precioA !== precioB) {
-          return precioA - precioB;
-        }
-        return a.start_time.localeCompare(b.start_time);
+        const pA = parsePrecio(a.price);
+        const pB = parsePrecio(b.price);
+        if (pA !== pB) return pA - pB;
+        return (a.start_time || '').localeCompare(b.start_time || '');
       });
     }
     return base;
   })();
 
+  const totalPaginas = Math.max(1, Math.ceil(resultadosFiltrados.length / RESULTADOS_POR_PAGINA));
+  const inicio = (paginaActual - 1) * RESULTADOS_POR_PAGINA;
+  const resultadosPaginados = resultadosFiltrados.slice(inicio, inicio + RESULTADOS_POR_PAGINA);
+
+  useEffect(() => {
+    setPaginaActual(1);
+  }, [club, zona, distancia, ordenarPor, resultados.length]);
+
+  const inputBase = `
+    w-full px-3 py-2.5 rounded-lg text-sm
+    border transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500
+    dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100
+    bg-white border-slate-300 text-slate-900
+  `.trim().replace(/\s+/g, ' ');
+
+  const labelBase = 'block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5';
+
   return (
     <div className={`
-      min-h-screen p-4 transition-colors duration-300
-      ${modoOscuro 
-        ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100' 
-        : 'bg-gradient-to-br from-blue-50 via-white to-blue-50 text-gray-900'
-      }
+      min-h-screen flex transition-colors duration-300
+      ${modoOscuro ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}
     `}>
-      <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto relative">
-        {/* Bloque principal */}
-        <div className="flex-1">
-          <div className={`
-            shadow-2xl rounded-2xl p-8 transition-all duration-300
-            ${modoOscuro
-              ? 'bg-gray-800/50 backdrop-blur-sm border border-gray-700 text-white'
-              : 'bg-white/80 backdrop-blur-sm border border-gray-100 text-black'
-            }
+      <div className="flex flex-1 min-w-0">
+        <main className="flex-1 min-w-0 flex flex-col">
+          <header className={`
+            sticky top-0 z-40 flex items-center justify-between px-3 sm:px-4 lg:px-8 py-3 sm:py-4
+            border-b backdrop-blur-sm
+            ${modoOscuro ? 'bg-slate-900/80 border-slate-800' : 'bg-white/80 border-slate-200'}
           `}>
-            <div className="flex justify-between items-center mb-6">
-              <h1 className={`
-                text-4xl font-extrabold text-center w-full flex items-center justify-center gap-3
-                ${modoOscuro ? 'text-blue-400' : 'text-blue-600'}
-              `}>
-                <span className="text-5xl">🎾</span>
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-blue-400">
-                  Buscador de Canchas
-                </span>
-              </h1>
-              <div className="flex items-center gap-4">
-                {/* Botón de menú para móvil */}
-                <button
-                  onClick={() => setMostrarMenu(!mostrarMenu)}
-                  className={`
-                    lg:hidden p-2 rounded-lg transition-colors
-                    ${modoOscuro
-                      ? 'text-gray-300 hover:text-white hover:bg-gray-700'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    }
-                  `}
-                  title="Menú"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-
-                {/* Toggle de tema */}
-                <button
-                  onClick={() => setModoOscuro(!modoOscuro)}
-                  className={`
-                    p-2 rounded-lg transition-all duration-300 transform hover:scale-110
-                    ${modoOscuro
-                      ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600'
-                      : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
-                    }
-                  `}
-                  title={modoOscuro ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-                >
-                  {modoOscuro ? (
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                    </svg>
-                  )}
-                </button>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setMostrarMenu(!mostrarMenu)}
+                className="lg:hidden p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="Menu"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <div>
+                <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Best Padel</h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Buscador de canchas</p>
               </div>
             </div>
+          </header>
 
-            {/* Grid de campos de búsqueda */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  📅 Fecha:
-                </label>
-                <DatePicker
-                  selected={fecha}
-                  onChange={(date) => setFecha(date)}
-                  className={`
-                    w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                    transition-all duration-200
-                    ${modoOscuro 
-                      ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                    }
-                  `}
-                  dateFormat="yyyy-MM-dd"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  🕒 Hora mínima:
-                </label>
-                <DatePicker
-                  selected={horaMinima}
-                  onChange={(time) => setHoraMinima(time)}
-                  showTimeSelect
-                  showTimeSelectOnly
-                  timeIntervals={15}
-                  timeCaption="Hora"
-                  dateFormat="hh:mm aa"
-                  className={`
-                    w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                    transition-all duration-200
-                    ${modoOscuro 
-                      ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                    }
-                  `}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  🕒 Hora máxima:
-                </label>
-                <DatePicker
-                  selected={horaMaxima}
-                  onChange={(time) => setHoraMaxima(time)}
-                  showTimeSelect
-                  showTimeSelectOnly
-                  timeIntervals={15}
-                  timeCaption="Hora"
-                  dateFormat="hh:mm aa"
-                  className={`
-                    w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                    transition-all duration-200
-                    ${modoOscuro 
-                      ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                    }
-                  `}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  📏 Duración:
-                </label>
-                <select value={duracion} onChange={e => setDuracion(e.target.value)} className={`
-                  w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                  transition-all duration-200
-                  ${modoOscuro 
-                    ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                  }
-                `}>
-                  <option value={30}>30 min</option>
-                  <option value={60}>60 min</option>
-                  <option value={90}>90 min</option>
-                  <option value={120}>120 min</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  💰 Presupuesto por persona:
-                </label>
-                <div className="relative">
-                  <input 
-                    type="number" 
-                    value={presupuesto} 
-                    onChange={e => setPresupuesto(e.target.value)}
-                    className={`
-                      w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                      transition-all duration-200
-                      ${modoOscuro 
-                        ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                        : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                      }
-                    `}
-                  />
-                  <p className={`
-                    text-sm mt-1
-                    ${modoOscuro ? 'text-gray-400' : 'text-gray-500'}
-                  `}>
-                    Total: <span className="font-medium">{presupuestoTotal} MXN</span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  👥 Número de personas:
-                </label>
-                <input type="number" value={personas} onChange={e => setPersonas(e.target.value)} className={`
-                  w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                  transition-all duration-200
-                  ${modoOscuro 
-                    ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                  }
-                `} />
-              </div>
-
-              <div className="space-y-2">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  🏟️ Filtro por club:
-                </label>
-                <select value={club} onChange={e => setClub(e.target.value)} className={`
-                  w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                  transition-all duration-200
-                  ${modoOscuro 
-                    ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                  }
-                `}>
-                  <option value="">Todos</option>
-                  {clubesDisponibles.map((c, i) => (
-                    <option key={i} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  Zona:
-                </label>
-                <select value={zona} onChange={e => setZona(e.target.value)} className={`
-                  w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                  transition-all duration-200
-                  ${modoOscuro 
-                    ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                  }
-                `}>
-                  <option value="">Todas</option>
-                  {[...new Set(clubesDisponibles.map(c => c.zone))].map((z, i) => (
-                    <option key={i} value={z}>{z}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2 md:col-span-1">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  Distancia máxima (km):
-                </label>
-                <input 
-                  type="number" 
-                  value={distancia} 
-                  onChange={e => setDistancia(e.target.value)} 
-                  className={`
-                    w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none
-                    transition-all duration-200
-                    ${modoOscuro 
-                      ? 'bg-gray-700/50 border-gray-600 text-white placeholder-gray-400'
-                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
-                    }
-                  `} 
-                />
-              </div>
-
-              <div className="space-y-2 md:col-span-1">
-                <label className={`
-                  block text-sm font-medium
-                  ${modoOscuro ? 'text-gray-300' : 'text-gray-700'}
-                `}>
-                  Ordenar por:
-                </label>
-                <div className="flex gap-2">
-                  {['precio', 'horario', 'distancia'].map((tipo) => (
+          <div className="flex-1 p-3 sm:p-4 lg:p-8 overflow-auto">
+            <div className="max-w-4xl mx-auto space-y-6">
+              <section className={`
+                rounded-xl border p-4 sm:p-6
+                ${modoOscuro ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}
+              `}>
+                <h2 className="text-base sm:text-lg font-semibold text-slate-800 dark:text-slate-200 mb-4 sm:mb-6">Parametros de busqueda</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                  <div>
+                    <label className={labelBase}>Fecha</label>
+                    <DatePicker
+                      selected={fecha}
+                      onChange={(d) => setFecha(d)}
+                      className={inputBase}
+                      dateFormat="yyyy-MM-dd"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelBase}>Hora minima</label>
+                    <DatePicker
+                      selected={horaMinima}
+                      onChange={(t) => setHoraMinima(t)}
+                      showTimeSelect
+                      showTimeSelectOnly
+                      timeIntervals={15}
+                      timeCaption="Hora"
+                      dateFormat="HH:mm"
+                      className={inputBase}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelBase}>Hora maxima</label>
+                    <DatePicker
+                      selected={horaMaxima}
+                      onChange={(t) => setHoraMaxima(t)}
+                      showTimeSelect
+                      showTimeSelectOnly
+                      timeIntervals={15}
+                      timeCaption="Hora"
+                      dateFormat="HH:mm"
+                      className={inputBase}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelBase}>Duracion</label>
+                    <select value={duracion} onChange={(e) => setDuracion(Number(e.target.value))} className={inputBase}>
+                      <option value={30}>30 min</option>
+                      <option value={60}>60 min</option>
+                      <option value={90}>90 min</option>
+                      <option value={120}>120 min</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelBase}>Presupuesto por persona (MXN)</label>
+                    <input
+                      type="number"
+                      value={presupuesto}
+                      onChange={(e) => setPresupuesto(Number(e.target.value))}
+                      className={inputBase}
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Total: {presupuestoTotal} MXN</p>
+                  </div>
+                  <div>
+                    <label className={labelBase}>Personas</label>
+                    <input
+                      type="number"
+                      value={personas}
+                      onChange={(e) => setPersonas(Number(e.target.value))}
+                      className={inputBase}
+                    />
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-1">
+                    <label className={labelBase}>Ordenar por</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {['precio', 'horario', 'distancia'].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setOrdenarPor(t)}
+                          className={`
+                            px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                            ${ordenarPor === t
+                              ? 'bg-emerald-600 text-white'
+                              : modoOscuro
+                                ? 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }
+                          `}
+                        >
+                          {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="col-span-full">
                     <button
-                      key={tipo}
-                      onClick={() => setOrdenarPor(tipo)}
+                      type="button"
+                      onClick={() => setMostrarFiltrosAvanzados(v => !v)}
                       className={`
-                        flex-1 px-3 py-3 rounded-xl border text-sm transition-all duration-200
-                        ${ordenarPor === tipo
-                          ? modoOscuro
-                            ? 'bg-blue-500 text-white border-blue-600'
-                            : 'bg-blue-600 text-white border-blue-600'
-                          : modoOscuro
-                            ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                            : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
+                        w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm
+                        border transition-colors
+                        ${mostrarFiltrosAvanzados || filtrosAvanzadosActivos
+                          ? 'border-emerald-500/50 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                         }
                       `}
                     >
-                      {tipo.charAt(0).toUpperCase() + tipo.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Botón de búsqueda */}
-            <button
-              onClick={buscar}
-              disabled={loading}
-              className={`
-                mt-8 w-full flex justify-center items-center gap-3 py-4 rounded-xl
-                text-lg font-semibold transition-all duration-300
-                ${loading
-                  ? 'opacity-70 cursor-not-allowed'
-                  : modoOscuro
-                    ? 'bg-blue-500 hover:bg-blue-600 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }
-                transform hover:scale-[1.02] active:scale-[0.98]
-              `}
-            >
-              {loading ? (
-                <>
-                  <span className="animate-spin rounded-full h-5 w-5 border-t-2 border-white border-solid" />
-                  Buscando...
-                </>
-              ) : (
-                <>
-                  <span className="text-xl">🔍</span>
-                  Buscar
-                </>
-              )}
-            </button>
-
-            {/* Resultados */}
-            <div className="mt-8">
-              <h2 className={`
-                text-2xl font-bold mb-4
-                ${modoOscuro ? 'text-gray-200' : 'text-gray-800'}
-              `}>
-                Resultados:
-              </h2>
-              {resultadosFiltrados.length === 0 ? (
-                <div className={`
-                  text-center py-8
-                  ${modoOscuro ? 'text-gray-400' : 'text-gray-500'}
-                `}>
-                  <span className="text-4xl block mb-2">🔎</span>
-                  <p>No se encontraron resultados.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {resultadosFiltrados.map((r, idx) => {
-                    const esFav = favoritos.some(
-                      f => f.club === r.club && f.start_time === r.start_time && f.price === r.price
-                    );
-                    const clubInfo = clubesDisponibles.find(c => c.name === r.club);
-                    const distanciaAlClub = userCoords && clubInfo ? 
-                      Math.round(distanciaEntre(userCoords.lat, userCoords.lon, clubInfo.lat, clubInfo.lon) * 10) / 10 
-                      : null;
-
-                    return (
-                      <div 
-                        key={idx} 
-                        className={`
-                          rounded-xl p-4 transition-all duration-200
-                          ${modoOscuro
-                            ? 'bg-gray-700/50 hover:bg-gray-700'
-                            : 'bg-white hover:bg-gray-50'
-                          }
-                          border
-                          ${modoOscuro ? 'border-gray-600' : 'border-gray-200'}
-                          hover:shadow-lg
-                        `}
+                      <span className="flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        Filtros avanzados
+                        {filtrosAvanzadosActivos && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                            Activos
+                          </span>
+                        )}
+                      </span>
+                      <svg
+                        className={`w-5 h-5 transition-transform ${mostrarFiltrosAvanzados ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
                       >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {mostrarFiltrosAvanzados && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className={labelBase}>Club</label>
+                          <select value={club} onChange={(e) => setClub(e.target.value)} className={inputBase}>
+                            <option value="">Todos</option>
+                            {clubesDisponibles.map((c, i) => (
+                              <option key={i} value={c.name}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelBase}>Zona</label>
+                          <select value={zona} onChange={(e) => setZona(e.target.value)} className={inputBase}>
+                            <option value="">Todas</option>
+                            {[...new Set(clubesDisponibles.map(c => c.zone))].map((z, i) => (
+                              <option key={i} value={z}>{z}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelBase}>Distancia max (km)</label>
+                          <input
+                            type="number"
+                            value={distancia}
+                            onChange={(e) => setDistancia(e.target.value)}
+                            placeholder="Ej: 5"
+                            className={inputBase}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={buscar}
+                  disabled={loading}
+                  className="mt-4 sm:mt-6 w-full sm:w-auto px-8 py-3 rounded-lg font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-70 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                      Buscando...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      Buscar
+                    </>
+                  )}
+                </button>
+              </section>
+
+              <section className={`
+                rounded-xl border overflow-hidden
+                ${modoOscuro ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'}
+              `}>
+                <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+                  <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
+                    Resultados
+                    {resultadosFiltrados.length > 0 && (
+                      <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
+                        ({resultadosFiltrados.length} encontrados)
+                      </span>
+                    )}
+                  </h2>
+                </div>
+                <div className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {resultadosFiltrados.length === 0 ? (
+                    <div className="py-16 text-center text-slate-500 dark:text-slate-400">
+                      <svg className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <p>No hay resultados. Define parametros y busca.</p>
+                    </div>
+                  ) : (
+                    resultadosPaginados.map((r, idx) => {
+                      const esFav = favoritos.some(f => f.club === r.club && f.start_time === r.start_time && f.price === r.price);
+                      const clubInfo = clubesDisponibles.find(c => c.name === r.club);
+                      const dist = userCoords && clubInfo
+                        ? Math.round(distanciaEntre(userCoords.lat, userCoords.lon, clubInfo.lat, clubInfo.lon) * 10) / 10
+                        : null;
+                      return (
+                        <div
+                          key={`${r.club}-${r.start_time}-${r.price}`}
+                          className={`
+                            flex items-center justify-between gap-4 px-6 py-4
+                            hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors
+                          `}
+                        >
+                          <div className="flex-1 min-w-0">
                             <a
                               href={r.link || '#'}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className={`
-                                font-semibold text-lg hover:underline
-                                ${modoOscuro ? 'text-blue-400' : 'text-blue-600'}
-                              `}
+                              className="font-semibold text-emerald-600 dark:text-emerald-400 hover:underline truncate block"
                             >
                               {r.club}
                             </a>
-                            <div className="mt-2 space-y-1">
-                              <p className={`text-sm ${modoOscuro ? 'text-gray-300' : 'text-gray-600'}`}>
-                                ⏰ {r.start_time} ({r.duration} min)
-                              </p>
-                              <p className={`font-medium ${modoOscuro ? 'text-green-400' : 'text-green-600'}`}>
-                                {r.price}
-                              </p>
-                              <p className={`text-sm ${modoOscuro ? 'text-gray-400' : 'text-gray-500'}`}>
-                                ({r.pricePerPerson} por persona)
-                              </p>
-                              {distanciaAlClub !== null && (
-                                <p className={`text-sm ${modoOscuro ? 'text-gray-400' : 'text-gray-500'}`}>
-                                  📍 {distanciaAlClub} km
-                                </p>
-                              )}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-slate-600 dark:text-slate-400">
+                              <span>{r.start_time} ({r.duration} min)</span>
+                              <span className="font-medium text-emerald-600 dark:text-emerald-400">{r.price}</span>
+                              <span>{r.pricePerPerson} por persona</span>
+                              {dist !== null && <span>{dist} km</span>}
                             </div>
                           </div>
-                          <button 
-                            onClick={() => toggleFavorito(r)}
-                            className={`
-                              text-2xl transition-transform duration-200 hover:scale-110
-                              ${esFav ? 'text-yellow-500' : modoOscuro ? 'text-gray-500' : 'text-gray-400'}
-                            `}
-                          >
-                            {esFav ? '★' : '☆'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Panel lateral */}
-        <div className={`
-          fixed lg:relative lg:w-96
-          top-0 right-0 h-full w-80
-          transform transition-all duration-300 ease-in-out
-          ${mostrarMenu ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
-          ${modoOscuro
-            ? 'bg-gray-800/50 backdrop-blur-sm border border-gray-700'
-            : 'bg-white/80 backdrop-blur-sm border border-gray-100'
-          }
-          shadow-2xl lg:shadow-xl
-          z-50 lg:z-0
-          rounded-xl
-        `}>
-          {/* Cabecera del panel lateral (solo móvil) */}
-          <div className="lg:hidden flex justify-between items-center p-4 border-b dark:border-gray-700">
-            <h2 className="font-semibold text-lg">Menú</h2>
-            <button
-              onClick={() => setMostrarMenu(false)}
-              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Contenedor del contenido del panel */}
-          <div className="h-[calc(100%-56px)] lg:h-full flex flex-col">
-            {/* Mapa */}
-            <div className="h-[300px] lg:h-[350px] rounded-xl overflow-hidden shadow-xl mx-4 mt-4">
-              <MapContainer 
-                center={GDL_CENTER}
-                zoom={12} 
-                className="h-full w-full"
-                maxBounds={GDL_BOUNDS}
-                minZoom={11}
-                maxZoom={18}
-                boundsOptions={{ padding: [0, 0] }}
-                style={{ background: '#fff' }}
-              >
-                <TileLayer
-                  attribution='&copy; OpenStreetMap contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  bounds={GDL_BOUNDS}
-                  noWrap={true}
-                />
-                {userCoords && (
-                  <Marker 
-                    position={[userCoords.lat, userCoords.lon]}
-                    icon={userIcon}
-                  >
-                    <Popup>Tu ubicación actual</Popup>
-                  </Marker>
-                )}
-                {clubesDisponibles.map((c, i) => (
-                  <Marker 
-                    key={i} 
-                    position={[c.lat, c.lon]}
-                    icon={clubIcon}
-                  >
-                    <Popup>
-                      <div className="font-semibold">{c.name}</div>
-                      <div className="text-sm">{c.zone}</div>
-                    </Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
-              {isLoadingLocation && (
-                <div className={`
-                  absolute top-6 left-1/2 transform -translate-x-1/2
-                  px-4 py-2 rounded-full text-sm
-                  ${modoOscuro
-                    ? 'bg-gray-800 text-gray-200'
-                    : 'bg-white text-gray-600'
-                  }
-                  shadow-lg border
-                  ${modoOscuro ? 'border-gray-700' : 'border-gray-200'}
-                `}>
-                  <div className="flex items-center gap-2">
-                    <div className="animate-spin h-4 w-4 border-2 border-blue-500 rounded-full border-t-transparent"></div>
-                    <span>Obteniendo ubicación...</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Lista de favoritos */}
-            <div className="flex-1 overflow-y-auto px-4 pb-4">
-              <h3 className="text-xl font-bold flex items-center my-4">
-                <span className="text-yellow-500 mr-2">★</span> 
-                Mis Favoritos
-              </h3>
-              {favoritos.length > 0 ? (
-                <div className="space-y-4">
-                  {favoritos.map((f, i) => {
-                    const clubInfo = clubesDisponibles.find(c => c.name === f.club);
-                    const distanciaAlClub = userCoords && clubInfo ? 
-                      Math.round(distanciaEntre(userCoords.lat, userCoords.lon, clubInfo.lat, clubInfo.lon) * 10) / 10 
-                      : null;
-                    const estaDisponible = disponibilidadFavoritos[`${f.club}-${f.start_time}-${f.price}`];
-
-                    return (
-                      <div key={i} className={`
-                        relative rounded-xl p-4 transition-all duration-200
-                        ${loadingFavoritos
-                          ? 'bg-gray-100 dark:bg-gray-800'
-                          : estaDisponible
-                            ? modoOscuro
-                              ? 'bg-gray-800/50 hover:bg-gray-800/70'
-                              : 'bg-white hover:bg-gray-50'
-                            : modoOscuro
-                              ? 'bg-red-900/20 hover:bg-red-900/30'
-                              : 'bg-red-50 hover:bg-red-100/80'
-                        }
-                        border
-                        ${loadingFavoritos
-                          ? 'border-gray-200 dark:border-gray-700'
-                          : estaDisponible
-                            ? modoOscuro
-                              ? 'border-gray-700'
-                              : 'border-gray-200'
-                            : modoOscuro
-                              ? 'border-red-800/30'
-                              : 'border-red-200'
-                        }
-                      `}>
-                        <div className="flex justify-between items-start mb-1">
-                          <h4 className={`
-                            font-semibold text-lg
-                            ${modoOscuro ? 'text-blue-400' : 'text-blue-600'}
-                          `}>
-                            {f.club}
-                          </h4>
-                          <div className="flex items-center gap-2">
-                            {loadingFavoritos ? (
-                              <div className="w-24 h-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
-                            ) : (
-                              <>
-                                {!estaDisponible ? (
-                                  <div className={`
-                                    px-3 py-1.5 text-sm font-medium
-                                    ${modoOscuro
-                                      ? 'bg-red-500/90 text-white'
-                                      : 'bg-red-500 text-white'
-                                    }
-                                    rounded-full
-                                  `}>
-                                    No disponible
-                                  </div>
-                                ) : f.link && (
-                                  <a
-                                    href={f.link}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className={`
-                                      px-3 py-1.5 text-sm font-medium text-white
-                                      ${modoOscuro
-                                        ? 'bg-green-500/90 hover:bg-green-500'
-                                        : 'bg-green-500 hover:bg-green-600'
-                                      }
-                                      rounded-full transition-colors
-                                    `}
-                                  >
-                                    Reservar
-                                  </a>
-                                )}
-                                <button 
-                                  onClick={() => toggleFavorito(f)}
-                                  className={`
-                                    p-1.5 rounded-full transition-all duration-200 hover:scale-110
-                                    ${modoOscuro ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}
-                                  `}
-                                >
-                                  <span className="text-xl text-red-500">✕</span>
-                                </button>
-                              </>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {r.link && (
+                              <a
+                                href={r.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-500"
+                              >
+                                Reservar
+                              </a>
                             )}
+                            <button
+                              onClick={() => toggleFavorito(r)}
+                              className={`p-2 rounded-lg transition-colors ${
+                                esFav ? 'text-amber-500' : 'text-slate-400 hover:text-amber-500'
+                              }`}
+                              aria-label={esFav ? 'Quitar favorito' : 'Agregar favorito'}
+                            >
+                              <svg className="w-5 h-5" fill={esFav ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                              </svg>
+                            </button>
                           </div>
                         </div>
-                        <div className="mt-2 space-y-1">
-                          <p className={`text-sm ${modoOscuro ? 'text-gray-300' : 'text-gray-600'}`}>
-                            ⏰ {f.start_time}
-                          </p>
-                          <p className={`font-medium ${modoOscuro ? 'text-green-400' : 'text-green-600'}`}>
-                            {f.price}
-                          </p>
-                          {distanciaAlClub !== null && (
-                            <p className={`text-sm ${modoOscuro ? 'text-gray-400' : 'text-gray-500'}`}>
-                              📍 {distanciaAlClub} km
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
-              ) : (
-                <div className="text-center text-gray-500 dark:text-gray-400">
-                  <span className="text-2xl">★</span>
-                  <p className="mt-2">No tienes canchas favoritas</p>
-                </div>
-              )}
+                {resultadosFiltrados.length > RESULTADOS_POR_PAGINA && (
+                  <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-slate-600 dark:text-slate-400">
+                      Mostrando {inicio + 1}-{Math.min(inicio + RESULTADOS_POR_PAGINA, resultadosFiltrados.length)} de {resultadosFiltrados.length}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
+                        disabled={paginaActual <= 1}
+                        className="p-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        aria-label="Pagina anterior"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                      <span className="px-3 py-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {paginaActual} / {totalPaginas}
+                      </span>
+                      <button
+                        onClick={() => setPaginaActual(p => Math.min(totalPaginas, p + 1))}
+                        disabled={paginaActual >= totalPaginas}
+                        className="p-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        aria-label="Pagina siguiente"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
             </div>
           </div>
-        </div>
+        </main>
+
+        <Sidebar
+          modoOscuro={modoOscuro}
+          setModoOscuro={setModoOscuro}
+          mostrarMenu={mostrarMenu}
+          setMostrarMenu={setMostrarMenu}
+        >
+          <MapCard
+            userCoords={userCoords}
+            clubesDisponibles={clubesDisponibles}
+            isLoadingLocation={isLoadingLocation}
+          />
+          <FavoritesList
+            favoritos={favoritos}
+            clubesDisponibles={clubesDisponibles}
+            userCoords={userCoords}
+            distanciaEntre={distanciaEntre}
+            disponibilidadFavoritos={disponibilidadFavoritos}
+            loadingFavoritos={loadingFavoritos}
+            toggleFavorito={toggleFavorito}
+            modoOscuro={modoOscuro}
+          />
+        </Sidebar>
       </div>
+
+      {mostrarMenu && (
+        <div
+          className="fixed inset-0 bg-black/30 z-40 lg:hidden"
+          onClick={() => setMostrarMenu(false)}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }

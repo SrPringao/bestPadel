@@ -1,4 +1,5 @@
 @import 'react-datepicker/dist/react-datepicker.css';
+@import 'leaflet/dist/leaflet.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -19,8 +20,16 @@
   
   .react-datepicker__input-container input {
     width: 100%;
-    padding: 0.5rem;
+    padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
-    border: 1px solid #d1d5db; /* Tailwind's gray-300 */
-    font-size: 1rem;
+    border: 1px solid #cbd5e1;
+    font-size: 0.875rem;
+    background: white;
+    color: #0f172a;
+  }
+
+  .dark .react-datepicker__input-container input {
+    border-color: #475569;
+    background: #1e293b;
+    color: #f1f5f9;
   }
